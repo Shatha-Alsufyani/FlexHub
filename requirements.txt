@@ -1,0 +1,33 @@
+# FlexHub - tested on Python 3.10 (Windows 10)
+# Install: python -m venv .venv  then  .venv\Scripts\pip install -r requirements.txt
+#
+# JupyterHub also needs the proxy from npm (Node.js required):
+#   npm install -g configurable-http-proxy
+
+# Backend API
+fastapi==0.141.1
+uvicorn==0.53.0
+httpx==0.28.1
+pydantic==2.13.5
+python-dotenv==1.2.3
+python-multipart==0.0.32
+nbformat==5.11.1
+
+# Database & Persistence
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.9
+
+# JupyterHub + single-user notebook servers
+jupyterhub==6.0.1
+jupyterlab==4.6.3
+psutil==7.2.2
+traitlets>=5.0.0
+
+# Azure oauthenticator
+oauthenticator
+
+# Frontend
+streamlit==1.63.0
+
+# Cloud Storage
+azure-storage-blob>=12.19.0
