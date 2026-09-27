@@ -62,6 +62,10 @@ c.JupyterHub.cookie_options = {
 # Automatically allow users who successfully authenticate via Azure
 c.Authenticator.allow_all = True
 
+c.LocalAuthenticator.create_system_users = True
+
+c.JupyterHub.default_url = '/hub/home'
+
 class WindowsLocalProcessSpawner(SimpleLocalProcessSpawner):
     """SimpleLocalProcessSpawner that works on Windows.
 

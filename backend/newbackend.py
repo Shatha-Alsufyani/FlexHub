@@ -14,21 +14,32 @@ from backend.FlexHub_db.database import get_db, User, NotebookSession, init_db
 import uuid
 from azure.storage.blob import BlobServiceClient, ContentSettings
 from backend.FlexHub_db.database import get_db, User, NotebookSession, FileRecord, init_db
-
+from fastapi import Form, Query
 load_dotenv()
 
 
+import os
+from azure.storage.blob import BlobServiceClient
+
+# 1. Environment Variables (Matching keys)
 AZURE_STORAGE_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING", "")
-CONTAINER_NAME = os.getenv("AZURE_CONTAINER_NAME", "user-uploads")
+AZURE_CONTAINER_NAME = os.getenv("AZURE_CONTAINER_NAME", "flexhub-uploads")
 
 blob_service_client = None
+container_client = None
+
 if AZURE_STORAGE_CONNECTION_STRING:
     try:
         blob_service_client = BlobServiceClient.from_connection_string(AZURE_STORAGE_CONNECTION_STRING)
+        container_client = blob_service_client.get_container_client(AZURE_CONTAINER_NAME)
+        
+        # Automatically create container in Azure if it doesn't exist
+        if not container_client.exists():
+            container_client.create_container()
+            print(f"Azure Container '{AZURE_CONTAINER_NAME}' created.")
+            
     except Exception as e:
         print(f"Warning: Failed to connect to Azure Storage: {e}")
-
-
 # Configuration
 HUB_API_URL = os.getenv("HUB_API_URL", "http://localhost:8081/hub/api").rstrip("/")
 HUB_PROXY_URL = os.getenv("HUB_PROXY_URL", "http://localhost:8001").rstrip("/")
@@ -342,6 +353,58 @@ async def delete_workspace_file(workspace_id: str, filename: str):
     return {"message": f"File '{filename}' deleted successfully from flexhub_data."}
 
 
+@app.post("/upload/azure", summary="Upload file to Private or Shared Azure Blob")
+async def upload_to_azure(
+    username: str = Form(...),
+    privacy: str = Form("private"), # "private" or "shared"
+    file: UploadFile = File(...)
+):
+    if not blob_service_client or not container_client:
+        raise HTTPException(status_code=500, detail="Azure Storage not configured.")
+
+    prefix = f"private/{username}" if privacy == "private" else "shared"
+    blob_name = f"{prefix}/{file.filename}"
+
+    try:
+        blob_client = container_client.get_blob_client(blob_name)
+        contents = await file.read()
+        blob_client.upload_blob(contents, overwrite=True)
+
+        return {
+            "message": "File uploaded successfully.",
+            "blob_name": blob_name,
+            "url": blob_client.url
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/files/azure", summary="List Private or Shared files in Azure")
+async def list_azure_files(
+    username: str = Query(...),
+    scope: str = Query("private") # "private" or "shared"
+):
+    if not blob_service_client or not container_client:
+        return {"files": []}
+
+    prefix = f"private/{username}/" if scope == "private" else "shared/"
+    
+    file_list = []
+    try:
+        blobs = container_client.list_blobs(name_starts_with=prefix)
+        for blob in blobs:
+            clean_name = blob.name.replace(prefix, "")
+            if clean_name:
+                blob_client = container_client.get_blob_client(blob.name)
+                file_list.append({
+                    "name": clean_name,
+                    "size": round(blob.size / 1024, 2),
+                    "url": blob_client.url
+                })
+        return {"files": file_list}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Notebook Conversion Endpoint
 
 @app.post("/convert", summary="Convert .py to .ipynb and Download")
@@ -383,39 +446,39 @@ async def convert_python_to_notebook(
 
 # JupyterHub Server Standalone Control
 
-"""@app.post("/users/{username}/server", summary="Start Notebook Server")
-async def start_server_endpoint(username: str):
-    require_hub_token()
-    url = await start_jupyter_server(username)
-    return {"message": f"Server active for {username}.", "url": url}
-"""
-
 @app.post("/users/{username}/server", summary="Start Notebook Server")
 async def start_server_endpoint(username: str):
     require_hub_token()
     
     # 1. Ask JupyterHub API to spin up the user server
     async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            response = await client.post(
-                f"{HUB_API_URL}/users/{username}/server", 
-                headers=HEADERS
-            )
-            
-            # 2. Return the JupyterHub spawn/user landing URL
-            # JupyterHub public proxy is on port 8001
-            spawn_url = f"{HUB_PROXY_URL}/hub/spawn/{username}"
-            
-            return {
-                "message": f"Server request sent for {username}.", 
-                "url": spawn_url
-            }
-        except httpx.RequestError as exc:
-            raise HTTPException(
-                status_code=503, 
-                detail=f"Unable to reach JupyterHub server: {str(exc)}"
-            )
-        
+            try:
+                response = await client.post(
+                    f"{HUB_API_URL}/users/{username}/server", 
+                    headers=HEADERS
+                )
+                
+                if response.status_code in (201, 202):
+                    return {"message": f"Server is starting for {username}."}
+                elif response.status_code == 200 or (
+                    response.status_code == 400 and "already running" in response.text
+                ):
+                    # JupyterHub 6 reports an already-running server as 400.
+                    return {"message": f"Server is already running for {username}."}
+                else:
+                    raise hub_error(response)
+            except httpx.RequestError as exc:
+                raise HTTPException(
+                    status_code=503, 
+                    detail=f"Unable to reach JupyterHub server: {str(exc)}"
+                )
+
+            except httpx.RequestError as e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Could not connect to JupyterHub: {str(e)}"
+                )
+
 @app.delete("/users/{username}/server", summary="Stop Notebook Server")
 async def stop_notebook_server(username: str):
     require_hub_token()
@@ -459,7 +522,7 @@ async def upload_file(
 
         # Unique blob name prevents file collisions in the container
         unique_blob_name = f"{uuid.uuid4().hex[:8]}_{file.filename}"
-        blob_client = blob_service_client.get_blob_client(container=CONTAINER_NAME, blob=unique_blob_name)
+        blob_client = blob_service_client.get_blob_client(container=AZURE_CONTAINER_NAME, blob=unique_blob_name)
 
         # Upload file stream to Azure Blob
         file_content = await file.read()
