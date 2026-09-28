@@ -6,6 +6,7 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - DATABASE_URL=${DATABASE_URL}
       - HUB_PROXY_URL=http://jupyterhub:8001
       - HUB_API_URL=http://jupyterhub:8001/hub/api
       - HUB_TOKEN=super_secret_flexhub_token_2026
