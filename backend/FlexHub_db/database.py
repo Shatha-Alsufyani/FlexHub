@@ -1,8 +1,8 @@
 import os
 from datetime import datetime, timezone
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey
-from sqlalchemy.orm import declarative_base, sessionmaker, relationship
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, create_engine
+from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
 # Load environment configuration from .env
 load_dotenv()
@@ -18,7 +18,8 @@ if not DATABASE_URL:
 # SQLite requires 'check_same_thread=False', PostgreSQL does not
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 
-engine = create_engine(DATABASE_URL, connect_args=connect_args)
+# pool_pre_ping=True prevents dropped connections on Azure PostgreSQL Flexible Server
+engine = create_engine(DATABASE_URL, connect_args=connect_args, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -33,7 +34,8 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=True)
     hashed_password = Column(String, nullable=True)
     role = Column(String, nullable=False, default="user")
-    created_at = Column(DateTime, default=datetime.now(timezone.utc))
+    # Callable lambda ensures a fresh timestamp on every record insertion
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     sessions = relationship("NotebookSession", back_populates="user", cascade="all, delete-orphan")
     files = relationship("FileRecord", back_populates="user", cascade="all, delete-orphan")
@@ -45,9 +47,15 @@ class NotebookSession(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     server_status = Column(String, default="stopped")
-    last_activity = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Replaced deprecated datetime.utcnow with timezone-aware lambda
+    last_activity = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc)
+    )
 
     user = relationship("User", back_populates="sessions")
+
 
 class FileRecord(Base):
     __tablename__ = "files"
@@ -60,6 +68,7 @@ class FileRecord(Base):
     uploaded_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     user = relationship("User", back_populates="files")
+
 
 # --- Initialization & Dependency Injection ---
 
