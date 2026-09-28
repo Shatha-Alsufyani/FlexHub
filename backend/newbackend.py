@@ -379,7 +379,8 @@ async def delete_workspace_file(workspace_id: str, filename: str):
 async def upload_to_azure(
     username: str = Form(...),
     privacy: str = Form("private"), # "private" or "shared"
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
 ):
     if not blob_service_client or not container_client:
         raise HTTPException(status_code=500, detail="Azure Storage not configured.")
@@ -392,12 +393,25 @@ async def upload_to_azure(
         contents = await file.read()
         blob_client.upload_blob(contents, overwrite=True)
 
+        user_record = db.query(User).filter(User.username == username).first()
+        user_id = user_record.id if user_record else None
+
+        db_file = FileRecord(
+            user_id=user_id,
+            filename=file.filename,
+            blob_url=blob_client.url,
+            content_type=file.content_type
+        )
+        db.add(db_file)
+        db.commit()
+
         return {
             "message": "File uploaded successfully.",
             "blob_name": blob_name,
             "url": blob_client.url
         }
     except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -469,7 +483,7 @@ async def convert_python_to_notebook(
 # JupyterHub Server Standalone Control
 
 @app.post("/users/{username}/server", summary="Start Notebook Server")
-async def start_server_endpoint(username: str):
+async def start_server_endpoint(username: str, db: Session = Depends(get_db)):
     require_hub_token()
     
     # 1. Ask JupyterHub API to spin up the user server
@@ -481,11 +495,29 @@ async def start_server_endpoint(username: str):
                 )
                 
                 if response.status_code in (201, 202):
+                    user = db.query(User).filter(User.username == username).first()
+                    if user:
+                        session = db.query(NotebookSession).filter(NotebookSession.user_id == user.id).first()
+                        if not session:
+                            session = NotebookSession(user_id=user.id, server_status="running")
+                            db.add(session)
+                        else:
+                            session.server_status = "running"
+                        db.commit()
                     return {"message": f"Server is starting for {username}."}
                 elif response.status_code == 200 or (
                     response.status_code == 400 and "already running" in response.text
                 ):
                     # JupyterHub 6 reports an already-running server as 400.
+                    user = db.query(User).filter(User.username == username).first()
+                    if user:
+                        session = db.query(NotebookSession).filter(NotebookSession.user_id == user.id).first()
+                        if not session:
+                            session = NotebookSession(user_id=user.id, server_status="running")
+                            db.add(session)
+                        else:
+                            session.server_status = "running"
+                        db.commit()
                     return {"message": f"Server is already running for {username}."}
                 else:
                     raise hub_error(response)
@@ -502,7 +534,7 @@ async def start_server_endpoint(username: str):
                 )
 
 @app.delete("/users/{username}/server", summary="Stop Notebook Server")
-async def stop_notebook_server(username: str):
+async def stop_notebook_server(username: str, db: Session = Depends(get_db)):
     require_hub_token()
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
@@ -511,6 +543,12 @@ async def stop_notebook_server(username: str):
                 headers=HEADERS
             )
             if response.status_code in (202, 204):
+                user = db.query(User).filter(User.username == username).first()
+                if user:
+                    session = db.query(NotebookSession).filter(NotebookSession.user_id == user.id).first()
+                    if session:
+                        session.server_status = "stopped"
+                        db.commit()
                 return {"message": f"Server stopped for {username}."}
             else:
                 raise hub_error(response)
