@@ -1,0 +1,45 @@
+services:
+  backend:
+    build: 
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8000:8000"
+    environment:
+      - HUB_PROXY_URL=http://jupyterhub:8001
+      - HUB_API_URL=http://jupyterhub:8001/hub/api
+      - HUB_TOKEN=super_secret_flexhub_token_2026
+      - AZURE_STORAGE_CONNECTION_STRING=${AZURE_STORAGE_CONNECTION_STRING}
+    volumes:
+      - ./backend/FlexHub_db:/app/backend/FlexHub_db
+      - ./flexhub_data:/app/flexhub_data
+
+  jupyterhub:
+    build:
+      context: .
+      dockerfile: Dockerfile.jupyterhub
+    ports:
+      - "8001:8001"
+      - "8081:8081"
+    environment:
+      - JUPYTERHUB_API_TOKEN=super_secret_flexhub_token_2026
+      - HUB_TOKEN=super_secret_flexhub_token_2026
+      - AAD_TENANT_ID=${AAD_TENANT_ID}
+      - AAD_CLIENT_ID=${AAD_CLIENT_ID}
+      - AAD_CLIENT_SECRET=${AAD_CLIENT_SECRET}
+      - AAD_OAUTH_CALLBACK_URL=http://localhost:8001/hub/oauth_callback
+    volumes:
+      - ./flexhub_data:/srv/jupyterhub/flexhub_data
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "8502:8501" 
+    environment:
+      - FLEXHUB_API_URL=http://backend:8000
+      - HUB_PROXY_URL=http://localhost:8001 
+    depends_on:
+      - backend
+      - jupyterhub

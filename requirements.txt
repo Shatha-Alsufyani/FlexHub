@@ -31,3 +31,5 @@ streamlit==1.63.0
 
 # Cloud Storage
 azure-storage-blob>=12.19.0
+
+email-validator==2.1.1

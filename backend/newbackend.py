@@ -139,11 +139,11 @@ def hub_error(response: httpx.Response) -> HTTPException:
         detail=f"JupyterHub Error: {response.text}"
     )
 
-
 async def start_jupyter_server(username: str) -> str:
     """Helper to start JupyterHub server for a user and return the user's server URL."""
     if not HUB_TOKEN:
-        return f"{HUB_PROXY_URL}/hub/user/{username}/"
+        # Send them to the Home page
+        return f"{HUB_PROXY_URL}/hub/home" 
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
@@ -152,7 +152,8 @@ async def start_jupyter_server(username: str) -> str:
                 headers=HEADERS
             )
             if response.status_code in (200, 201, 202) or "already running" in response.text:
-                return f"{HUB_PROXY_URL}/hub/user/{username}/"
+                # Send them to the Home page
+                return f"{HUB_PROXY_URL}/hub/home" 
             else:
                 raise hub_error(response)
         except httpx.RequestError as exc:
@@ -160,6 +161,27 @@ async def start_jupyter_server(username: str) -> str:
                 status_code=503,
                 detail=f"Unable to reach JupyterHub server: {str(exc)}"
             )
+        
+#async def start_jupyter_server(username: str) -> str:
+#    """Helper to start JupyterHub server for a user and return the user's server URL."""
+#    if not HUB_TOKEN:
+#       return f"{HUB_PROXY_URL}/hub/user/{username}/"
+
+#    async with httpx.AsyncClient(timeout=30.0) as client:
+#        try:
+#            response = await client.post(
+#                f"{HUB_API_URL}/users/{username}/server",
+#                headers=HEADERS
+#            )
+#            if response.status_code in (200, 201, 202) or "already running" in response.text:
+#                return f"{HUB_PROXY_URL}/hub/user/{username}/"
+#            else:
+#                raise hub_error(response)
+#        except httpx.RequestError as exc:
+#            raise HTTPException(
+#                status_code=503,
+#                detail=f"Unable to reach JupyterHub server: {str(exc)}"
+#            )
 
 
 # User Endpoints

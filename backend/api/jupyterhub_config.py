@@ -39,11 +39,18 @@ c.JupyterHub.bind_url = "http://localhost:8001"
 c.ConfigurableHTTPProxy.api_url = "http://localhost:8002"
 
 # The Hub's REST API.
-c.JupyterHub.hub_ip = "localhost"
+c.JupyterHub.hub_ip = '0.0.0.0'
 c.JupyterHub.hub_port = 8081
+c.JupyterHub.ip = '0.0.0.0'
+c.JupyterHub.port = 8001
 
 # Windows-compatible auth + spawn (see WINDOWS NOTE above). Dev only.
-
+# --- TEMPORARY LOCAL TESTING AUTH ---
+# from jupyterhub.auth import DummyAuthenticator
+# c.JupyterHub.authenticator_class = DummyAuthenticator
+# c.DummyAuthenticator.password = "password" # Type this when JupyterHub asks for a password
+# Add this line so it automatically accepts any username you type:
+c.Authenticator.allow_all = True
 # Azure authentication
 c.JupyterHub.authenticator_class = AzureAdOAuthenticator
 c.AzureAdOAuthenticator.tenant_id = os.environ.get("AAD_TENANT_ID")
@@ -53,6 +60,9 @@ c.AzureAdOAuthenticator.oauth_callback_url = "http://localhost:8001/hub/oauth_ca
 
 # Allow non-HTTPS state cookies for localhost OAuth testing
 c.AzureAdOAuthenticator.legacy_state_cookie = True
+
+# c.JupyterHub.redirect_to_server = True #J. Added to redirect to the user server after login instead of the hub home page
+
 
 # Ensure OAuth state cookies work properly over http on localhost
 c.JupyterHub.cookie_options = {
@@ -65,6 +75,7 @@ c.Authenticator.allow_all = True
 c.LocalAuthenticator.create_system_users = True
 
 c.JupyterHub.default_url = '/hub/home'
+
 
 class WindowsLocalProcessSpawner(SimpleLocalProcessSpawner):
     """SimpleLocalProcessSpawner that works on Windows.
@@ -143,3 +154,10 @@ c.JupyterHub.load_roles = [
         "services": ["flexhub-backend"],
     }
 ]
+
+# ==========================================
+# Routing & Spawning
+# ==========================================
+c.JupyterHub.spawner_class = 'jupyterhub.spawner.SimpleLocalProcessSpawner'
+c.Spawner.default_url = '/lab'
+c.JupyterHub.redirect_to_server = True
