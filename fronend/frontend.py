@@ -16,12 +16,10 @@ load_dotenv()
 # CONFIGURATION
 # ============================================================
 
-API_URL = os.getenv("FLEXHUB_API_URL", "http://127.0.0.1:8000").rstrip("/")
-HUB_URL = os.getenv(
-    "HUB_PROXY_URL", "http://localhost:8001").rstrip("/")  # J changed this
+API_URL = os.getenv("FLEXHUB_API_URL", "http://backend:8000").rstrip("/")
+HUB_URL = os.getenv("HUB_PROXY_URL", "http://localhost:8001").rstrip("/")
 AZURE_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING", "")
-AZURE_CONTAINER_NAME = os.getenv(
-    "AZURE_STORAGE_CONTAINER_NAME", "flexhub-uploads")
+AZURE_CONTAINER_NAME = os.getenv("AZURE_STORAGE_CONTAINER_NAME", "flexhub-uploads")
 
 st.set_page_config(
     page_title="FlexHub Workspace",
@@ -43,6 +41,9 @@ if "user_name" not in st.session_state:
 if "user_email" not in st.session_state:
     st.session_state.user_email = ""
 
+if "user_role" not in st.session_state:
+    st.session_state.user_role = "user"
+
 if "team_members" not in st.session_state:
     st.session_state.team_members = []
 
@@ -56,7 +57,6 @@ if "server_url" not in st.session_state:
 # HELPER FUNCTIONS
 # ============================================================
 
-
 def upload_to_azure_blob(file, filename):
     """Uploads a file to Azure Blob Storage if configured."""
     if not AZURE_AVAILABLE:
@@ -66,12 +66,9 @@ def upload_to_azure_blob(file, filename):
         return False, "AZURE_STORAGE_CONNECTION_STRING is missing in .env."
 
     try:
-        blob_service_client = BlobServiceClient.from_connection_string(
-            AZURE_CONNECTION_STRING)
-        container_client = blob_service_client.get_container_client(
-            AZURE_CONTAINER_NAME)
+        blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONNECTION_STRING)
+        container_client = blob_service_client.get_container_client(AZURE_CONTAINER_NAME)
 
-        # Create container if it doesn't exist
         try:
             container_client.create_container()
         except Exception:
@@ -88,15 +85,13 @@ def upload_to_azure_blob(file, filename):
 
 def require_login():
     if not st.session_state.logged_in:
-        st.warning(
-            "🔐 Please login or create an account in the Sidebar to continue.")
+        st.warning("🔐 Please login or create an account in the Sidebar to continue.")
         return False
     return True
 
 # ============================================================
-# STYLING (Crimson Accent #cc0000)
+# STYLING
 # ============================================================
-
 
 st.markdown(
     """
@@ -109,14 +104,6 @@ st.markdown(
     }
     .brand-accent {
         color: #cc0000;
-    }
-    .card {
-        border: 1px solid #e2e8f0;
-        border-radius: 12px;
-        padding: 20px;
-        background-color: white;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-        margin-bottom: 15px;
     }
     .status-running {
         color: #16a34a;
@@ -136,12 +123,10 @@ st.markdown(
 # ============================================================
 
 with st.sidebar:
-    st.markdown('<h1 class="main-header">Flex<span class="brand-accent">Hub</span></h1>',
-                unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">Flex<span class="brand-accent">Hub</span></h1>', unsafe_allow_html=True)
     st.caption("Cloud Data Science Workspace")
     st.markdown("---")
 
-    # ACCOUNT SECTION
     if st.session_state.logged_in:
         st.markdown("### 👤 Account")
         st.success(f"Signed in as **{st.session_state.user_name}**")
@@ -151,35 +136,36 @@ with st.sidebar:
             st.session_state.logged_in = False
             st.session_state.user_name = ""
             st.session_state.user_email = ""
+            st.session_state.user_role = "user"
             st.session_state.server_status = "Stopped"
             st.session_state.server_url = None
             st.rerun()
     else:
         st.markdown("### 🔐 Account")
-        auth_mode = st.radio(
-            "Choose Action", ["Login", "Sign Up"], key="auth_mode")
+        auth_mode = st.radio("Choose Action", ["Login", "Sign Up"], key="auth_mode")
 
         if auth_mode == "Login":
             username = st.text_input("Username", key="login_user")
-            password = st.text_input(
-                "Password", type="password", key="login_pass")
+            password = st.text_input("Password", type="password", key="login_pass")
 
             if st.button("Sign In", use_container_width=True, type="primary"):
                 if username and password:
                     try:
                         res = requests.post(
-                            f"{API_URL}/login", json={"Username": username, "Password": password}, timeout=10)
+                            f"{API_URL}/login",
+                            json={"Username": username, "Password": password},
+                            timeout=10
+                        )
                         if res.status_code == 200:
                             data = res.json()
                             st.session_state.logged_in = True
-                            st.session_state.user_name = data.get(
-                                "username", username)
+                            st.session_state.user_name = data.get("username", username)
                             st.session_state.user_email = data.get("email", "")
+                            st.session_state.user_role = data.get("role", "user")
                             st.success("Welcome back!")
                             st.rerun()
                         else:
-                            st.error(res.json().get(
-                                "detail", "Invalid username or password."))
+                            st.error(res.json().get("detail", "Invalid username or password."))
                     except requests.RequestException:
                         st.error("Cannot reach backend server.")
                 else:
@@ -188,23 +174,25 @@ with st.sidebar:
         else:  # Sign Up
             signup_user = st.text_input("Username", key="signup_user")
             signup_email = st.text_input("Email", key="signup_email")
-            signup_pass = st.text_input(
-                "Password", type="password", key="signup_pass")
+            signup_pass = st.text_input("Password", type="password", key="signup_pass")
 
             if st.button("Create Account", use_container_width=True, type="primary"):
                 if signup_user and signup_email and signup_pass:
                     try:
                         res = requests.post(
                             f"{API_URL}/users",
-                            json={"Username": signup_user, "Email": signup_email,
-                                  "Password": signup_pass, "Role": "user"},
+                            json={
+                                "Username": signup_user,
+                                "Email": signup_email,
+                                "Password": signup_pass,
+                                "Role": "user"
+                            },
                             timeout=10
                         )
                         if res.status_code in (200, 201):
                             st.success("Account created! Please Sign In.")
                         else:
-                            st.error(res.json().get(
-                                "detail", "Failed to create account."))
+                            st.error(res.json().get("detail", "Failed to create account."))
                     except requests.RequestException:
                         st.error("Cannot reach backend server.")
                 else:
@@ -212,11 +200,10 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # 5. SIDEBAR NAVIGATION
     st.markdown("### Navigation")
     page = st.radio(
         "Menu",
-        ["🏠 Dashboard", "📓 JupyterHub Server", "☁️ Azure File Upload", "👥 Team"],
+        ["🏠 Dashboard", "📓 JupyterHub Server", "☁️ Azure File Upload", "👥 Team", "⚙️ Settings"],
         key="nav_selection"
     )
 
@@ -225,181 +212,43 @@ with st.sidebar:
 # ============================================================
 
 if page == "🏠 Dashboard":
-
-    st.markdown(
-        '<div class="main-title">Welcome to FlexHub 🔴</div>',
-        unsafe_allow_html=True
-    )
-
-    st.markdown(
-        """
-        <div class="subtitle">
-        Your collaborative workspace for Data Science,
-        Python, and Jupyter Notebooks.
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    # --------------------------------------------------------
-    # USER STATUS
-    # --------------------------------------------------------
+    st.title("Welcome to FlexHub 🔴")
+    st.caption("Your collaborative workspace for Data Science, Python, and Jupyter Notebooks.")
 
     if st.session_state.logged_in:
-
-        st.success(
-            f"Welcome back, {st.session_state.user_name}! "
-            "You are logged in."
-        )
-
+        st.success(f"Welcome back, {st.session_state.user_name}! You are logged in.")
     else:
-
-        st.info(
-            "👋 Welcome! You can explore FlexHub without an account. "
-            "Login from the Sidebar when you want to upload files "
-            "or create a workspace."
-        )
+        st.info("👋 Welcome! You can explore FlexHub without an account. Login from the Sidebar when you want to upload files or create a workspace.")
 
     st.markdown("---")
 
-    # --------------------------------------------------------
-    # SERVER STATUS
-    # --------------------------------------------------------
-
     if st.session_state.logged_in:
-
         st.subheader("🖥️ Server Status")
+        status_class = "status-running" if st.session_state.server_status == "Running" else "status-stopped"
 
-        status_class = (
-            "status-running"
-            if st.session_state.server_status == "Running"
-            else "status-stopped"
-        )
+        st.markdown(f"**Status:** <span class='{status_class}'>{st.session_state.server_status}</span>", unsafe_allow_html=True)
 
-        st.markdown(
-            f"""
-            <div class="server-status-card">
-                <div>
-                    <strong>Status:</strong>
-                    <span class="{status_class}">
-                        {st.session_state.server_status}
-                    </span>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-        if (
-            st.session_state.server_status == "Running"
-            and st.session_state.server_url
-        ):
-
-            st.link_button(
-                "🚀 Launch JupyterLab Environment",
-                st.session_state.server_url,
-                use_container_width=True
-            )
-
+        if st.session_state.server_status == "Running" and st.session_state.server_url:
+            st.link_button("🚀 Launch JupyterLab Environment", st.session_state.server_url, use_container_width=True)
         else:
-
-            st.info(
-                "Start your server from the JupyterHub Server page."
-            )
+            st.info("Start your server from the JupyterHub Server page.")
 
         st.markdown("---")
 
-    # --------------------------------------------------------
-    # FEATURES
-    # --------------------------------------------------------
-
     col1, col2, col3 = st.columns(3)
-
     with col1:
-
-        st.markdown(
-            """
-            <div class="feature-card">
-
-            ### 📁 Workspaces
-
-            Create organized workspaces for your
-            Data Science projects.
-
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
+        st.markdown("### 📁 Workspaces\nCreate organized workspaces for your Data Science projects.")
     with col2:
-
-        st.markdown(
-            """
-            <div class="feature-card">
-
-            ### 📓 Jupyter Notebooks
-
-            Work with Python files and Jupyter
-            Notebooks in one place.
-
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
+        st.markdown("### 📓 Jupyter Notebooks\nWork with Python files and Jupyter Notebooks in one place.")
     with col3:
-
-        st.markdown(
-            """
-            <div class="feature-card">
-
-            ### 👥 Collaboration
-
-            Share and collaborate with your
-            team members.
-
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    st.markdown("## 🚀 Getting Started")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-
-        st.markdown(
-            """
-            ### For new users
-
-            1. Create an account from the Sidebar.
-            2. Login.
-            3. Create your workspace.
-            4. Upload your `.py` or `.ipynb` file.
-            """
-        )
-
-    with col2:
-
-        st.markdown(
-            """
-            ### Supported Files
-
-            - 🐍 Python `.py`
-            - 📓 Jupyter Notebook `.ipynb`
-            - ☁️ Cloud-based workspace
-            - 👥 Team collaboration
-            """
-        )
+        st.markdown("### 👥 Collaboration\nShare and collaborate with your team members.")
 
 # ============================================================
 # 2. JUPYTERHUB SERVER CONTROL PAGE
 # ============================================================
-
 elif page == "📓 JupyterHub Server":
     st.title("📓 JupyterHub Server Control")
-    st.write("Manage your personal notebook instance.")
+    st.write("Manage and launch your personal Jupyter notebook instance.")
     st.markdown("---")
 
     if require_login():
@@ -407,15 +256,14 @@ elif page == "📓 JupyterHub Server":
 
         with col_start:
             if st.button("▶️ Start Server", type="primary", use_container_width=True):
-                with st.spinner("Spinning up server..."):
+                with st.spinner("Starting your notebook server..."):
                     try:
-                        res = requests.post(
-                            f"{API_URL}/users/{st.session_state.user_name}/server", timeout=15)
+                        res = requests.post(f"{API_URL}/users/{st.session_state.user_name}/server", timeout=15)
                         if res.status_code == 200:
+                            data = res.json()
                             st.session_state.server_status = "Running"
-                            st.session_state.server_url = res.json().get(
-                                "url", f"{HUB_URL}/hub/home")  # J changed this
-#                            st.session_state.server_url = res.json().get("url", f"{HUB_URL}/hub/user/{st.session_state.user_name}/") # J changed this
+                            # Ensure link explicitly points to /hub/home
+                            st.session_state.server_url = data.get("url", f"{HUB_URL}/hub/home")
                             st.success("Server started successfully!")
                         else:
                             st.error(f"Failed to start server: {res.text}")
@@ -426,12 +274,12 @@ elif page == "📓 JupyterHub Server":
             if st.button("⏹️ Stop Server", use_container_width=True):
                 with st.spinner("Stopping server..."):
                     try:
-                        res = requests.delete(
-                            f"{API_URL}/users/{st.session_state.user_name}/server", timeout=15)
+                        res = requests.delete(f"{API_URL}/users/{st.session_state.user_name}/server", timeout=15)
                         if res.status_code in (200, 202, 204):
                             st.session_state.server_status = "Stopped"
                             st.session_state.server_url = None
                             st.success("Server stopped.")
+                            st.rerun()
                         else:
                             st.error(f"Failed to stop server: {res.text}")
                     except requests.RequestException as e:
@@ -439,13 +287,17 @@ elif page == "📓 JupyterHub Server":
 
         st.markdown("---")
 
-        # Launch Button
-        if st.session_state.server_status == "Running" and st.session_state.server_url:
-            st.success("Your server is ready!")
-            st.link_button("🚀 Open Active JupyterLab Environment",
-                           st.session_state.server_url, use_container_width=True)
+        if st.session_state.server_status == "Running":
+            # Direct launch button to /hub/home
+            st.success("Your server is active!")
+            st.link_button(
+                "🚀 Launch JupyterLab Environment", 
+                f"{HUB_URL}/hub/home", 
+                type="primary", 
+                use_container_width=True
+            )
         else:
-            st.info("Start your server above to obtain the environment launch link.")
+            st.info("Click '▶️ Start Server' above to launch your Jupyter environment.")
 
 # ============================================================
 # 3. AZURE BLOB STORAGE UPLOAD & FILE VISIBILITY PAGE
@@ -457,20 +309,18 @@ elif page == "☁️ Azure File Upload":
     st.markdown("---")
 
     if require_login():
-        # Upload Form Section
         st.subheader("📤 Upload New File")
 
         col_file, col_access = st.columns([2, 1])
         with col_file:
             uploaded_file = st.file_uploader(
-                "Select Python script (.py) or Notebook (.ipynb)",
-                type=["py", "ipynb", "csv", "json", "txt"]
+                "Select File",
+                type=["py", "ipynb"]
             )
         with col_access:
             privacy_option = st.radio(
                 "File Privacy Level",
-                ["🔒 Private (Only Me)", "🌐 Shared (Team Members)"],
-                help="Private files are stored in your personal directory. Shared files are visible to all team members."
+                ["🔒 Private (Only Me)", "🌐 Shared (Team Members)"]
             )
 
         if uploaded_file and st.button("🚀 Upload File to Azure", type="primary"):
@@ -478,115 +328,83 @@ elif page == "☁️ Azure File Upload":
             prefix = f"private/{st.session_state.user_name}" if is_private else "shared"
             blob_path = f"{prefix}/{uploaded_file.name}"
 
-            with st.spinner("Uploading file to Azure Storage..."):
-                # 1. Try uploading to Azure via FastAPI endpoint
+            with st.spinner("Uploading file..."):
                 try:
-                    files = {"file": (uploaded_file.name,
-                                      uploaded_file.getvalue())}
+                    files = {"file": (uploaded_file.name, uploaded_file.getvalue())}
                     data = {
                         "username": st.session_state.user_name,
                         "privacy": "private" if is_private else "shared"
                     }
-                    res = requests.post(
-                        f"{API_URL}/upload/azure", files=files, data=data, timeout=20)
+                    res = requests.post(f"{API_URL}/upload/azure", files=files, data=data, timeout=20)
 
                     if res.status_code == 200:
-                        st.success(
-                            f"✅ Uploaded `{uploaded_file.name}` as **{privacy_option}**!")
+                        st.success(f"✅ Uploaded `{uploaded_file.name}` as **{privacy_option}**!")
                     else:
-                        st.error(
-                            f"Backend upload error ({res.status_code}): {res.text}")
+                        st.error(f"Backend upload error ({res.status_code}): {res.text}")
                 except requests.RequestException:
-                    # 2. Direct Azure SDK Fallback if backend is bypassed
                     if AZURE_AVAILABLE and AZURE_CONNECTION_STRING:
                         try:
-                            blob_service_client = BlobServiceClient.from_connection_string(
-                                AZURE_CONNECTION_STRING)
-                            container_client = blob_service_client.get_container_client(
-                                AZURE_CONTAINER_NAME)
+                            blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONNECTION_STRING)
+                            container_client = blob_service_client.get_container_client(AZURE_CONTAINER_NAME)
 
                             if not container_client.exists():
                                 container_client.create_container()
 
-                            blob_client = container_client.get_blob_client(
-                                blob_path)
-                            blob_client.upload_blob(
-                                uploaded_file.getvalue(), overwrite=True)
-                            st.success(
-                                f"✅ Uploaded directly to Azure: `{blob_path}`")
+                            blob_client = container_client.get_blob_client(blob_path)
+                            blob_client.upload_blob(uploaded_file.getvalue(), overwrite=True)
+                            st.success(f"✅ Uploaded directly to Azure: `{blob_path}`")
                         except Exception as err:
-                            st.error(
-                                f"Failed to upload to Azure Storage: {err}")
+                            st.error(f"Failed to upload: {err}")
                     else:
-                        st.error(
-                            "Cannot connect to Azure Storage or FastAPI server.")
+                        st.error("Cannot connect to Azure Storage or backend server.")
 
         st.markdown("---")
-
-        # Azure Storage Explorer / Viewer
         st.subheader("📂 Azure Blob Files Explorer")
 
-        tab_private, tab_shared = st.tabs(
-            ["🔒 My Private Files", "🌐 Shared Team Files"])
+        tab_private, tab_shared = st.tabs(["🔒 My Private Files", "🌐 Shared Team Files"])
 
-        # TAB 1: Private Files
         with tab_private:
-            st.caption(
-                f"Files stored in path: `azure://{AZURE_CONTAINER_NAME}/private/{st.session_state.user_name}/`")
             try:
                 res = requests.get(
                     f"{API_URL}/files/azure",
-                    params={"username": st.session_state.user_name,
-                            "scope": "private"},
+                    params={"username": st.session_state.user_name, "scope": "private"},
                     timeout=10
                 )
                 if res.status_code == 200:
                     files = res.json().get("files", [])
                     if files:
                         for file_info in files:
-                            col_name, col_size, col_link = st.columns(
-                                [3, 1, 1])
+                            col_name, col_size, col_link = st.columns([3, 1, 1])
                             col_name.write(f"📄 **{file_info['name']}**")
-                            col_size.caption(
-                                f"{file_info.get('size', 'N/A')} KB")
+                            col_size.caption(f"{file_info.get('size', 'N/A')} KB")
                             col_link.link_button("🔗 Open", file_info["url"])
                     else:
                         st.info("You haven't uploaded any private files yet.")
-                else:
-                    st.info(
-                        "No private files found or backend listing endpoint offline.")
             except requests.RequestException:
                 st.warning("Unable to fetch private file list from server.")
 
-        # TAB 2: Shared Files
         with tab_shared:
-            st.caption(
-                f"Files stored in path: `azure://{AZURE_CONTAINER_NAME}/shared/`")
             try:
                 res = requests.get(
                     f"{API_URL}/files/azure",
-                    params={"username": st.session_state.user_name,
-                            "scope": "shared"},
+                    params={"username": st.session_state.user_name, "scope": "shared"},
                     timeout=10
                 )
                 if res.status_code == 200:
                     files = res.json().get("files", [])
                     if files:
                         for file_info in files:
-                            col_name, col_owner, col_link = st.columns([
-                                                                       3, 1, 1])
+                            col_name, col_owner, col_link = st.columns([3, 1, 1])
                             col_name.write(f"🌐 **{file_info['name']}**")
-                            col_owner.caption(f"Shared File")
+                            col_owner.caption("Shared File")
                             col_link.link_button("🔗 Open", file_info["url"])
                     else:
                         st.info("No shared team files available.")
-                else:
-                    st.info("No shared files found.")
             except requests.RequestException:
                 st.warning("Unable to fetch shared file list from server.")
 
 # ============================================================
-# 5. TEAM MANAGEMENT PAGE
+# 4. TEAM MANAGEMENT PAGE
 # ============================================================
 
 elif page == "👥 Team":
@@ -596,7 +414,6 @@ elif page == "👥 Team":
 
     if require_login():
         st.subheader("➕ Invite Team Member")
-
         with st.form("add_team_form", clear_on_submit=True):
             col_name, col_email = st.columns(2)
             with col_name:
@@ -605,18 +422,13 @@ elif page == "👥 Team":
                 member_email = st.text_input("Email Address")
 
             submit = st.form_submit_button("Add Member", type="primary")
-
             if submit:
                 if member_name and member_email:
-                    new_member = {"name": member_name.strip(
-                    ), "email": member_email.strip()}
-                    st.session_state.team_members.append(new_member)
-                    st.success(
-                        f"Added **{member_name}** ({member_email}) to your team!")
+                    st.session_state.team_members.append({"name": member_name.strip(), "email": member_email.strip()})
+                    st.success(f"Added **{member_name}** to your team!")
                     st.rerun()
                 else:
-                    st.warning(
-                        "Please provide both Full Name and Email Address.")
+                    st.warning("Please provide both Full Name and Email Address.")
 
         st.markdown("---")
         st.subheader("Current Team Members")
@@ -624,62 +436,30 @@ elif page == "👥 Team":
             for idx, member in enumerate(st.session_state.team_members, 1):
                 col_info, col_del = st.columns([4, 1])
                 with col_info:
-                    st.write(
-                        f"**{idx}. {member['name']}** — `{member['email']}`")
+                    st.write(f"**{idx}. {member['name']}** — `{member['email']}`")
                 with col_del:
                     if st.button("Remove", key=f"remove_member_{idx}"):
                         st.session_state.team_members.pop(idx - 1)
                         st.rerun()
         else:
-            st.info("No members added yet.") 
-#============================================================
-#SETTINGS
-#============================================================
+            st.info("No members added yet.")
+
+# ============================================================
+# 5. SETTINGS PAGE
+# ============================================================
+
 elif page == "⚙️ Settings":
-
     st.title("⚙️ Settings")
+    if require_login():
+        st.subheader("Account Information")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.text_input("Username", value=st.session_state.user_name, disabled=True, key="settings_username")
+        with col2:
+            st.text_input("Email", value=st.session_state.user_email, disabled=True, key="settings_email")
 
-    if not require_login():
-        st.stop()
-
-    st.subheader("Account Information")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-
-        st.text_input(
-            "Username",
-            value=st.session_state.user_name,
-            disabled=True,
-            key="settings_username"
-        )
-
-    with col2:
-
-        st.text_input(
-            "Email",
-            value=st.session_state.user_email,
-            disabled=True,
-            key="settings_email"
-        )
-
-    st.text_input(
-        "Role",
-        value=st.session_state.user_role,
-        disabled=True,
-        key="settings_role"
-    )
-
-    st.markdown("---")
-
-    st.subheader("FlexHub")
-
-    st.write(
-        "FlexHub is a collaborative Data Science "
-        "and Jupyter workspace."
-    )
-
-    st.write(
-        "Version: 1.0.0"
-    )
+        st.text_input("Role", value=st.session_state.user_role, disabled=True, key="settings_role")
+        st.markdown("---")
+        st.subheader("FlexHub")
+        st.write("FlexHub is a collaborative Data Science and Jupyter workspace.")
+        st.write("Version: 1.0.0")

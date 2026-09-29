@@ -1,3 +1,4 @@
+
 services:
   backend:
     build: 
@@ -6,9 +7,8 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=${DATABASE_URL}
       - HUB_PROXY_URL=http://jupyterhub:8001
-      - HUB_API_URL=http://jupyterhub:8001/hub/api
+      - HUB_API_URL=http://jupyterhub:8081/hub/api
       - HUB_TOKEN=super_secret_flexhub_token_2026
       - AZURE_STORAGE_CONNECTION_STRING=${AZURE_STORAGE_CONNECTION_STRING}
     volumes:
@@ -37,7 +37,7 @@ services:
       context: .
       dockerfile: Dockerfile.frontend
     ports:
-      - "8502:8501" 
+      - "8501:8501" 
     environment:
       - FLEXHUB_API_URL=http://backend:8000
       - HUB_PROXY_URL=http://localhost:8001 
